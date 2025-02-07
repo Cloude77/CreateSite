@@ -1,7 +1,9 @@
 package main
 
 import (
+	"database/sql" // Новый импорт
 	"flag"
+	_ "github.com/go-sql-driver/mysql" // Новый импорт
 	"log"
 	"net/http"
 	"os"
@@ -22,12 +24,16 @@ func main() {
 	// Значение флага будет сохранено в переменной addr.
 	addr := flag.String("addr", ":4000", "http service address")
 
+	// Определение нового флага из командной строки для настройки MySQL подключения.
+	dsn := flag.String("dsn", "web:pass@tcp(127.0.0.1:3306)/snippetbox?parseTime=true", "mysql DSN")
+	flag.Parse()
+
 	// Мы вызываем функцию flag.Parse() для извлечения флага из командной строки.
 	// Она считывает значение флага из командной строки и присваивает его содержимое
 	// переменной. Вам нужно вызвать ее *до* использования переменной addr
 	// иначе она всегда будет содержать значение по умолчанию ":4000".
 	// Если есть ошибки во время извлечения данных - приложение будет остановлено.
-	flag.Parse()
+	//flag.Parse()
 	// Используйте log.New() для создания логгера для записи информационных сообщений. Для этого нужно
 	// три параметра: место назначения для записи логов (os.Stdout), строка
 	// с префиксом сообщения (INFO или ERROR) и флаги, указывающие, какая
@@ -40,6 +46,17 @@ func main() {
 	// названия файла и номера строки где обнаружилась ошибка.
 	errorLog := log.New(os.Stderr, "ERROR\t", log.Ldate|log.Ltime|log.Lshortfile)
 
+	// Чтобы функция main() была более компактной, мы поместили код для создания
+	// пула соединений в отдельную функцию openDB(). Мы передаем в нее полученный
+	// источник данных (DSN) из флага командной строки.
+	db, err := sql.Open("mysql", *dsn)
+	if err != nil {
+		errorLog.Fatal(err)
+	}
+	// Мы также откладываем вызов db.Close(), чтобы пул соединений был закрыт
+	// до выхода из функции main().
+
+	defer db.Close()
 	// Инициализируем новую структуру с зависимостями приложения.
 	app := &application{
 		errorLog: errorLog,
@@ -47,14 +64,14 @@ func main() {
 	}
 	// Используем методы из структуры в качестве обработчиков маршрутов.
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", app.home)
-	mux.HandleFunc("/snippet", app.showSnippet)
-	mux.HandleFunc("/snippet/create", app.createSnippet)
-
-	fileServer := http.FileServer(http.Dir("./ui/static/"))
-	//mux.Handle("/static", http.NotFoundHandler())
-	mux.Handle("/static/", http.StripPrefix("/static", fileServer))
+	//mux := http.NewServeMux()
+	//mux.HandleFunc("/", app.home)
+	//mux.HandleFunc("/snippet", app.showSnippet)
+	//mux.HandleFunc("/snippet/create", app.createSnippet)
+	//
+	//fileServer := http.FileServer(http.Dir("./ui/static/"))
+	////mux.Handle("/static", http.NotFoundHandler())
+	//mux.Handle("/static/", http.StripPrefix("/static", fileServer))
 
 	// Инициализируем новую структуру http.Server. Мы устанавливаем поля Addr и Handler, так
 	// что сервер использует тот же сетевой адрес и маршруты, что и раньше, и назначаем
@@ -62,8 +79,8 @@ func main() {
 	// при возникновении проблем.
 	srv := &http.Server{
 		Addr:     *addr,
-		Handler:  mux,
 		ErrorLog: errorLog,
+		Handler:  app.routes(), // Вызов нового метода app.routes()
 	}
 
 	// Значение, возвращаемое функцией flag.String(), является указателем на значение
@@ -73,8 +90,20 @@ func main() {
 
 	//log.Println("Запуск сервера на http://127.0.0.1:4000")
 	infolog.Printf("Listening on %s", *addr)
-	// Вызываем метод ListenAndServe() от нашей новой структуры http.Server
-
-	err := srv.ListenAndServe()
+	// Поскольку переменная `err` уже объявлена в приведенном выше коде, нужно
+	// использовать оператор присваивания =
+	// вместо оператора := (объявить и присвоить)
+	err = srv.ListenAndServe()
 	errorLog.Fatal(err)
+
+}
+func openDB(dsn string) (*sql.DB, error) {
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		return nil, err
+	}
+	if err := db.Ping(); err != nil {
+		return nil, err
+	}
+	return db, nil
 }
