@@ -1,5 +1,5 @@
 // Определение типа данных верхнего уровня
-package main
+package models
 
 import (
 	"errors"
